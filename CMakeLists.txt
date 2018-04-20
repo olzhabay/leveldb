@@ -163,8 +163,5 @@ set_target_properties(leveldb PROPERTIES PUBLIC_HEADER "include/leveldb/c.h;incl
 
 INSTALL(TARGETS leveldb ARCHIVE DESTINATION /usr/local/lib PUBLIC_HEADER DESTINATION /usr/local/include/leveldb)
 
-add_executable(leveldbmain main.cc)
-target_link_libraries(leveldbmain PUBLIC leveldb)
-
 add_executable(db_bench db/db_bench.cc)
 target_link_libraries(db_bench PUBLIC leveldb)
