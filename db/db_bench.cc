@@ -18,6 +18,9 @@
 #include "util/random.h"
 #include "util/testutil.h"
 
+uint64_t WRITE_LATENCY_IN_NS = 1000;
+uint64_t clflush_cnt = 0;
+
 // Comma-separated list of operations to run in the specified order
 //   Actual benchmarks:
 //      fillseq       -- write N values in sequential key order in async mode
@@ -48,6 +51,7 @@ static const char* FLAGS_benchmarks =
     "overwrite,"
     "readrandom,"
     "readrandom,"  // Extra run to allow previous compactions to quiesce
+    "rangequery,"
     "readseq,"
     "readreverse,"
     "compact,"
@@ -325,6 +329,8 @@ class Benchmark {
   WriteOptions write_options_;
   int reads_;
   int heap_counter_;
+  int ranges_;
+  int range_size_;
 
   void PrintHeader() {
     const int kKeySize = 16;
@@ -490,6 +496,10 @@ class Benchmark {
         method = &Benchmark::ReadReverse;
       } else if (name == Slice("readrandom")) {
         method = &Benchmark::ReadRandom;
+      } else if (name == Slice("rangequery")) {
+        ranges_ = 10;
+        range_size_ = 1000;
+        method = &Benchmark::RangeQuery;
       } else if (name == Slice("readmissing")) {
         method = &Benchmark::ReadMissing;
       } else if (name == Slice("seekrandom")) {
@@ -815,6 +825,29 @@ class Benchmark {
     thread->stats.AddMessage(msg);
   }
 
+  void RangeQuery(ThreadState* thread) {
+    ReadOptions options;
+    std::string value;
+    int64_t bytes = 0;
+    for (int i = 0; i < ranges_; i++) {
+      const int k = abs((int)(thread->rand.Next() % FLAGS_num) - range_size_);
+      const int l = k + range_size_;
+      char begin[100];
+      snprintf(begin, sizeof(begin), "%016d", k);
+      char end[100];
+      snprintf(end, sizeof(end), "%016d", l);
+      Iterator* iter = db_->NewIterator(options);
+      int r = 0;
+      for (iter->Seek(begin); r < range_size_ && iter->Valid(); iter->Next()) {
+        bytes += iter->key().size() + iter->value().size();
+        thread->stats.FinishedSingleOp();
+        ++r;
+      }
+      delete iter;
+    }
+    thread->stats.AddBytes(bytes);
+  }
+
   void ReadMissing(ThreadState* thread) {
     ReadOptions options;
     std::string value;
@@ -1018,3 +1051,4 @@ int main(int argc, char** argv) {
   benchmark.Run();
   return 0;
 }
+
