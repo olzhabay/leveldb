@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 
 project(leveldb CXX)
 set(CMAKE_DEBUG_POSTFIX "d")
@@ -33,7 +33,7 @@ if(MSVC)
 else()
     add_compile_options(
             -Wno-sign-compare
-            -std=c++11
+            -std=c++17
             -O2
             -DNDEBUG
     )
@@ -43,6 +43,8 @@ add_definitions(-DLEVELDB_ATOMIC_PRESENT)
 add_definitions(-DOS_LINUX)
 add_definitions(-DLEVELDB_PLATFORM_POSIX)
 add_definitions(-fno-builtin-memcmp)
+add_definitions(-Wint-to-pointer-cast)
+add_definitions(-DPERF_LOG=1)
 
 set(LEVEL_DB_FILES
         include/leveldb/c.h
@@ -129,7 +131,10 @@ set(LEVEL_DB_FILES
         port/port.h
         port/atomic_pointer.h
         util/testutil.h
-        util/testutil.cc)
+        util/testutil.cc
+        util/perf_log.h
+        util/perf_log.cc
+        )
 
 if(WIN32)
     list(APPEND LEVEL_DB_FILES

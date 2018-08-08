@@ -33,6 +33,10 @@
 #include "util/logging.h"
 #include "util/mutexlock.h"
 
+#ifdef PERF_LOG
+#include "util/perf_log.h"
+#endif
+
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -684,6 +688,9 @@ void DBImpl::BackgroundCall() {
 }
 
 void DBImpl::BackgroundCompaction() {
+#ifdef PERF_LOG
+  uint64_t start_micros = NowMicros();
+#endif
   mutex_.AssertHeld();
 
   if (imm_ != NULL) {
@@ -766,6 +773,10 @@ void DBImpl::BackgroundCompaction() {
     }
     manual_compaction_ = NULL;
   }
+#ifdef PERF_LOG
+  uint64_t micros = NowMicros() - start_micros;
+  logMicro(COMPACTION, start_micros, micros);
+#endif
 }
 
 void DBImpl::CleanupCompaction(CompactionState* compact) {
@@ -1134,11 +1145,18 @@ Status DBImpl::Get(const ReadOptions& options,
     // First look in the memtable, then in the immutable memtable (if any).
     LookupKey lkey(key, snapshot);
     if (mem->Get(lkey, value, &s)) {
-      // Done
+        // Done
     } else if (imm != NULL && imm->Get(lkey, value, &s)) {
-      // Done
+        // Done
     } else {
+#ifdef PERF_LOG
+      uint64_t start_micros = NowMicros();
+#endif
       s = current->Get(options, lkey, value, &stats);
+#ifdef PERF_LOG
+      uint64_t micros = NowMicros() - start_micros;
+      logMicro(VERSION, micros);
+#endif
       have_stat_update = true;
     }
     mutex_.Lock();

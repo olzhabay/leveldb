@@ -18,6 +18,10 @@
 #include "util/coding.h"
 #include "util/logging.h"
 
+#ifdef PERF_LOG
+#include "util/perf_log.h"
+#endif
+
 namespace leveldb {
 
 static int TargetFileSize(const Options* options) {
@@ -343,12 +347,18 @@ Status Version::Get(const ReadOptions& options,
   FileMetaData* last_file_read = NULL;
   int last_file_read_level = -1;
 
+#ifdef PERF_LOG
+  uint64_t sum_micros = 0;
+#endif
   // We can search level-by-level since entries never hop across
   // levels.  Therefore we are guaranteed that if we find data
   // in an smaller level, later levels are irrelevant.
   std::vector<FileMetaData*> tmp;
   FileMetaData* tmp2;
   for (int level = 0; level < config::kNumLevels; level++) {
+#ifdef PERF_LOG
+    uint64_t start_micros = NowMicros();
+#endif
     size_t num_files = files_[level].size();
     if (num_files == 0) continue;
 
@@ -388,6 +398,9 @@ Status Version::Get(const ReadOptions& options,
         }
       }
     }
+#ifdef PERF_LOG
+    sum_micros += NowMicros() - start_micros;
+#endif
 
     for (uint32_t i = 0; i < num_files; ++i) {
       if (last_file_read != NULL && stats->seek_file == NULL) {
@@ -405,26 +418,44 @@ Status Version::Get(const ReadOptions& options,
       saver.ucmp = ucmp;
       saver.user_key = user_key;
       saver.value = value;
+#ifdef PERF_LOG
+      sum_micros += NowMicros() - start_micros;
+#endif
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
                                    ikey, &saver, SaveValue);
       if (!s.ok()) {
+#ifdef PERF_LOG
+        logMicro(QUERY, sum_micros);
+#endif
         return s;
       }
       switch (saver.state) {
         case kNotFound:
           break;      // Keep searching in other files
         case kFound:
+#ifdef PERF_LOG
+          logMicro(QUERY, sum_micros);
+#endif
           return s;
         case kDeleted:
           s = Status::NotFound(Slice());  // Use empty error message for speed
+#ifdef PERF_LOG
+          logMicro(QUERY, sum_micros);
+#endif
           return s;
         case kCorrupt:
           s = Status::Corruption("corrupted key for ", user_key);
+#ifdef PERF_LOG
+          logMicro(QUERY, sum_micros);
+#endif
           return s;
       }
     }
   }
 
+#ifdef PERF_LOG
+  logMicro(QUERY, sum_micros);
+#endif
   return Status::NotFound(Slice());  // Use an empty error message for speed
 }
 
@@ -1340,6 +1371,11 @@ Compaction* VersionSet::PickCompaction() {
     current_->GetOverlappingInputs(0, &smallest, &largest, &c->inputs_[0]);
     assert(!c->inputs_[0].empty());
   }
+
+#ifdef PERF_LOG
+  uint64_t numfiles = c->num_input_files(0) + c->num_input_files(1);
+  logMicro(COMPACTION_F, numfiles);
+#endif
 
   SetupOtherInputs(c);
 

@@ -69,7 +69,6 @@ Status ReadBlock(RandomAccessFile* file,
   result->data = Slice();
   result->cachable = false;
   result->heap_allocated = false;
-
   // Read the block contents as well as the type/crc footer.
   // See table_builder.cc for the code that built this structure.
   size_t n = static_cast<size_t>(handle.size());
@@ -137,8 +136,7 @@ Status ReadBlock(RandomAccessFile* file,
       delete[] buf;
       return Status::Corruption("bad block type");
   }
-
-  return Status::OK();
+  return s;
 }
 
 }  // namespace leveldb

@@ -17,9 +17,9 @@
 #include "util/mutexlock.h"
 #include "util/random.h"
 #include "util/testutil.h"
-
-uint64_t WRITE_LATENCY_IN_NS = 1000;
-uint64_t clflush_cnt = 0;
+#ifdef PERF_LOG
+#include "util/perf_log.h"
+#endif
 
 // Comma-separated list of operations to run in the specified order
 //   Actual benchmarks:
@@ -45,24 +45,8 @@ uint64_t clflush_cnt = 0;
 //      sstables    -- Print sstable info
 //      heapprofile -- Dump a heap profile (if supported by this port)
 static const char* FLAGS_benchmarks =
-    "fillseq,"
-    "fillsync,"
     "fillrandom,"
-    "overwrite,"
     "readrandom,"
-    "readrandom,"  // Extra run to allow previous compactions to quiesce
-    "rangequery,"
-    "readseq,"
-    "readreverse,"
-    "compact,"
-    "readrandom,"
-    "readseq,"
-    "readreverse,"
-    "fill100K,"
-    "crc32c,"
-    "snappycomp,"
-    "snappyuncomp,"
-    "acquireload,"
     ;
 
 // Number of key/values to place in database
@@ -114,6 +98,9 @@ static bool FLAGS_use_existing_db = false;
 
 // If true, reuse existing log/MANIFEST files when re-opening a database.
 static bool FLAGS_reuse_logs = false;
+
+// Range query size
+static int FLAGS_range_size = 1000;
 
 // Use the db with the following name.
 static const char* FLAGS_db = NULL;
@@ -498,7 +485,7 @@ class Benchmark {
         method = &Benchmark::ReadRandom;
       } else if (name == Slice("rangequery")) {
         ranges_ = 10;
-        range_size_ = 1000;
+        range_size_ = FLAGS_range_size;
         method = &Benchmark::RangeQuery;
       } else if (name == Slice("readmissing")) {
         method = &Benchmark::ReadMissing;
@@ -537,20 +524,6 @@ class Benchmark {
           fprintf(stderr, "unknown benchmark '%s'\n", name.ToString().c_str());
         }
       }
-
-      if (fresh_db) {
-        if (FLAGS_use_existing_db) {
-          fprintf(stdout, "%-12s : skipped (--use_existing_db is true)\n",
-                  name.ToString().c_str());
-          method = NULL;
-        } else {
-          delete db_;
-          db_ = NULL;
-          DestroyDB(FLAGS_db, Options());
-          Open();
-        }
-      }
-
       if (method != NULL) {
         RunBenchmark(num_threads, name, method);
       }
@@ -785,13 +758,18 @@ class Benchmark {
     Iterator* iter = db_->NewIterator(ReadOptions());
     int i = 0;
     int64_t bytes = 0;
+    std::string value;
     for (iter->SeekToFirst(); i < reads_ && iter->Valid(); iter->Next()) {
       bytes += iter->key().size() + iter->value().size();
+      value = iter->value().ToString();
       thread->stats.FinishedSingleOp();
       ++i;
     }
     delete iter;
     thread->stats.AddBytes(bytes);
+    char msg[100];
+    snprintf(msg, sizeof(msg), "(%d of reads)", i);
+    thread->stats.AddMessage(msg);
   }
 
   void ReadReverse(ThreadState* thread) {
@@ -840,6 +818,7 @@ class Benchmark {
       int r = 0;
       for (iter->Seek(begin); r < range_size_ && iter->Valid(); iter->Next()) {
         bytes += iter->key().size() + iter->value().size();
+        value = iter->value().ToString();
         thread->stats.FinishedSingleOp();
         ++r;
       }
@@ -987,6 +966,9 @@ class Benchmark {
 }  // namespace leveldb
 
 int main(int argc, char** argv) {
+#ifdef PERF_LOG
+  leveldb::createPerfLog();
+#endif
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_max_file_size = leveldb::Options().max_file_size;
   FLAGS_block_size = leveldb::Options().block_size;
@@ -1030,6 +1012,8 @@ int main(int argc, char** argv) {
       FLAGS_bloom_bits = n;
     } else if (sscanf(argv[i], "--open_files=%d%c", &n, &junk) == 1) {
       FLAGS_open_files = n;
+    } else if (sscanf(argv[i], "--range_size=%d%c", &n, &junk) == 1) {
+      FLAGS_range_size = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
     } else {
@@ -1049,6 +1033,9 @@ int main(int argc, char** argv) {
 
   leveldb::Benchmark benchmark;
   benchmark.Run();
+#ifdef PERF_LOG
+  leveldb::closePerfLog();
+#endif
   return 0;
 }
 
