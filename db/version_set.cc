@@ -348,7 +348,8 @@ Status Version::Get(const ReadOptions& options,
   int last_file_read_level = -1;
 
 #ifdef PERF_LOG
-  uint64_t sum_micros = 0;
+  uint64_t other_micros = 0;
+  uint64_t start_micros = NowMicros();
 #endif
   // We can search level-by-level since entries never hop across
   // levels.  Therefore we are guaranteed that if we find data
@@ -356,9 +357,6 @@ Status Version::Get(const ReadOptions& options,
   std::vector<FileMetaData*> tmp;
   FileMetaData* tmp2;
   for (int level = 0; level < config::kNumLevels; level++) {
-#ifdef PERF_LOG
-    uint64_t start_micros = NowMicros();
-#endif
     size_t num_files = files_[level].size();
     if (num_files == 0) continue;
 
@@ -398,9 +396,6 @@ Status Version::Get(const ReadOptions& options,
         }
       }
     }
-#ifdef PERF_LOG
-    sum_micros += NowMicros() - start_micros;
-#endif
 
     for (uint32_t i = 0; i < num_files; ++i) {
       if (last_file_read != NULL && stats->seek_file == NULL) {
@@ -419,13 +414,16 @@ Status Version::Get(const ReadOptions& options,
       saver.user_key = user_key;
       saver.value = value;
 #ifdef PERF_LOG
-      sum_micros += NowMicros() - start_micros;
+      uint64_t t_ = NowMicros();
 #endif
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
                                    ikey, &saver, SaveValue);
+#ifdef PERF_LOG
+      other_micros += NowMicros() - t_;
+#endif
       if (!s.ok()) {
 #ifdef PERF_LOG
-        logMicro(QUERY, sum_micros);
+        logMicro(QUERY, NowMicros() - start_micros - other_micros);
 #endif
         return s;
       }
@@ -434,19 +432,19 @@ Status Version::Get(const ReadOptions& options,
           break;      // Keep searching in other files
         case kFound:
 #ifdef PERF_LOG
-          logMicro(QUERY, sum_micros);
+          logMicro(QUERY, NowMicros() - start_micros - other_micros);
 #endif
           return s;
         case kDeleted:
           s = Status::NotFound(Slice());  // Use empty error message for speed
 #ifdef PERF_LOG
-          logMicro(QUERY, sum_micros);
+          logMicro(QUERY, NowMicros() - start_micros - other_micros);
 #endif
           return s;
         case kCorrupt:
           s = Status::Corruption("corrupted key for ", user_key);
 #ifdef PERF_LOG
-          logMicro(QUERY, sum_micros);
+          logMicro(QUERY, NowMicros() - start_micros - other_micros);
 #endif
           return s;
       }
@@ -454,7 +452,7 @@ Status Version::Get(const ReadOptions& options,
   }
 
 #ifdef PERF_LOG
-  logMicro(QUERY, sum_micros);
+  logMicro(QUERY, NowMicros() - start_micros - other_micros);
 #endif
   return Status::NotFound(Slice());  // Use an empty error message for speed
 }
