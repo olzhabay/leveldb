@@ -229,6 +229,7 @@ Iterator* Table::BlockReader2(void* arg,
 
   if (s.ok()) {
     BlockContents contents;
+#ifdef PERF_LOG
     if (block_cache != NULL) {
       char cache_key_buffer[16];
       EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
@@ -238,14 +239,36 @@ Iterator* Table::BlockReader2(void* arg,
       if (cache_handle != NULL) {
         block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
       } else {
-#ifdef PERF_LOG
-        uint64_t start_micros = NowMicros();
-#endif
+        uint64_t start_micros = benchmark::NowMicros();
         s = ReadBlock(table->rep_->file, options, handle, &contents);
-#ifdef PERF_LOG
-        uint64_t micros = NowMicros() - start_micros;
-	logMicro(BLOCK, micros);
-#endif
+        benchmark::LogMicros(benchmark::BLOCK, benchmark::NowMicros() - start_micros);
+        if (s.ok()) {
+          block = new Block(contents);
+          if (contents.cachable && options.fill_cache) {
+            cache_handle = block_cache->Insert(
+              key, block, block->size(), &DeleteCachedBlock);
+          }
+        }
+      }
+    } else {
+      uint64_t start_micros = benchmark::NowMicros();
+      s = ReadBlock(table->rep_->file, options, handle, &contents);
+      benchmark::LogMicros(benchmark::BLOCK, benchmark::NowMicros() - start_micros);
+      if (s.ok()) {
+        block = new Block(contents);
+      }
+    }
+#else
+    if (block_cache != NULL) {
+      char cache_key_buffer[16];
+      EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
+      EncodeFixed64(cache_key_buffer+8, handle.offset());
+      Slice key(cache_key_buffer, sizeof(cache_key_buffer));
+      cache_handle = block_cache->Lookup(key);
+      if (cache_handle != NULL) {
+        block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
+      } else {
+        s = ReadBlock(table->rep_->file, options, handle, &contents);
         if (s.ok()) {
           block = new Block(contents);
           if (contents.cachable && options.fill_cache) {
@@ -255,18 +278,12 @@ Iterator* Table::BlockReader2(void* arg,
         }
       }
     } else {
-#ifdef PERF_LOG
-      uint64_t start_micros = NowMicros();
-#endif
       s = ReadBlock(table->rep_->file, options, handle, &contents);
-#ifdef PERF_LOG
-      uint64_t micros = NowMicros() - start_micros;
-	logMicro(BLOCK, micros);
-#endif
       if (s.ok()) {
         block = new Block(contents);
       }
     }
+#endif
   }
   Iterator* iter;
   if (block != NULL) {

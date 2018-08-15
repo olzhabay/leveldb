@@ -68,6 +68,12 @@ static double FLAGS_compression_ratio = 0.5;
 // Print histogram of operation timings
 static bool FLAGS_histogram = false;
 
+// Print info in CSV format
+static bool FLAGS_csv = false;
+
+// CSV file
+static FILE* csv_file;
+
 // Number of bytes to buffer in memtable before compacting
 // (initialized to default value by "main")
 static int FLAGS_write_buffer_size = 0;
@@ -264,8 +270,16 @@ class Stats {
             seconds_ * 1e6 / done_,
             (extra.empty() ? "" : " "),
             extra.c_str());
+    if (FLAGS_csv) {
+      fprintf(csv_file, "%s, %f, micros/op, %s,\n",
+              name.ToString().c_str(), seconds_ * 1e6 / done_, extra.c_str());
+    }
     if (FLAGS_histogram) {
       fprintf(stdout, "Microseconds per op:\n%s\n", hist_.ToString().c_str());
+      if (FLAGS_csv) {
+        fprintf(csv_file, "%s", hist_.GetInfo().c_str());
+        fprintf(csv_file, "%s", hist_.GetHistogram().c_str());
+      }
     }
     fflush(stdout);
   }
@@ -335,6 +349,10 @@ class Benchmark {
              / 1048576.0));
     PrintWarnings();
     fprintf(stdout, "------------------------------------------------\n");
+    if (FLAGS_csv) {
+      fprintf(csv_file, "Key size, %d, Value size, %d, Entries, %d, Raw size MB(estimated), %.1f, \n",
+              kKeySize, FLAGS_value_size, num_, (((int64_t)(kKeySize + FLAGS_value_size) * num_) / 1048576.0));
+    }
   }
 
   void PrintWarnings() {
@@ -424,6 +442,9 @@ class Benchmark {
   }
 
   void Run() {
+    if (FLAGS_csv) {
+      csv_file = fopen("db_bench.csv", "w");
+    }
     PrintHeader();
     Open();
 
@@ -518,7 +539,11 @@ class Benchmark {
       } else if (name == Slice("waitcompaction")) {
         method = &Benchmark::WaitCompaction;
       } else if (name == Slice("stats")) {
-        PrintStats("leveldb.stats");
+        if (FLAGS_csv) {
+          PrintStats("leveldb.csv");
+        } else {
+          PrintStats("leveldb.stats");
+        }
       } else if (name == Slice("sstables")) {
         PrintStats("leveldb.sstables");
       } else {
@@ -528,6 +553,12 @@ class Benchmark {
       }
       if (method != NULL) {
         RunBenchmark(num_threads, name, method);
+      }
+    }
+    if (FLAGS_csv) {
+      fprintf(csv_file, "%s", leveldb::benchmark::GetInfo().c_str());
+      if (FLAGS_histogram) {
+        fprintf(csv_file, "%s", leveldb::benchmark::GetHistogram().c_str());
       }
     }
   }
@@ -944,7 +975,11 @@ class Benchmark {
     if (!db_->GetProperty(key, &stats)) {
       stats = "(failed)";
     }
-    fprintf(stdout, "\n%s\n", stats.c_str());
+    if (FLAGS_csv) {
+      fprintf(csv_file, "%s", stats.c_str());
+    } else {
+      fprintf(stdout, "\n%s\n", stats.c_str());
+    }
   }
 
   static void WriteToFile(void* arg, const char* buf, int n) {
@@ -973,7 +1008,7 @@ class Benchmark {
 
 int main(int argc, char** argv) {
 #ifdef PERF_LOG
-  leveldb::createPerfLog();
+  leveldb::benchmark::CreatePerfLog();
 #endif
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_max_file_size = leveldb::Options().max_file_size;
@@ -992,6 +1027,9 @@ int main(int argc, char** argv) {
     } else if (sscanf(argv[i], "--histogram=%d%c", &n, &junk) == 1 &&
                (n == 0 || n == 1)) {
       FLAGS_histogram = n;
+    } else if (sscanf(argv[i], "--csv=%d%c", &n, &junk) == 1 &
+               (n == 0 || n == 1)) {
+      FLAGS_csv = n;
     } else if (sscanf(argv[i], "--use_existing_db=%d%c", &n, &junk) == 1 &&
                (n == 0 || n == 1)) {
       FLAGS_use_existing_db = n;
@@ -1040,7 +1078,7 @@ int main(int argc, char** argv) {
   leveldb::Benchmark benchmark;
   benchmark.Run();
 #ifdef PERF_LOG
-  leveldb::closePerfLog();
+  leveldb::benchmark::ClosePerfLog();
 #endif
   return 0;
 }

@@ -529,6 +529,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   }
 
   CompactionStats stats;
+  stats.count = 1;
+  stats.files_created = 1;
   stats.micros = env_->NowMicros() - start_micros;
   stats.bytes_written = meta.file_size;
   stats_[level].Add(stats);
@@ -688,9 +690,6 @@ void DBImpl::BackgroundCall() {
 }
 
 void DBImpl::BackgroundCompaction() {
-#ifdef PERF_LOG
-  uint64_t start_micros = NowMicros();
-#endif
   mutex_.AssertHeld();
 
   if (imm_ != NULL) {
@@ -773,10 +772,6 @@ void DBImpl::BackgroundCompaction() {
     }
     manual_compaction_ = NULL;
   }
-#ifdef PERF_LOG
-  uint64_t micros = NowMicros() - start_micros;
-  logMicro(COMPACTION, start_micros, micros);
-#endif
 }
 
 void DBImpl::CleanupCompaction(CompactionState* compact) {
@@ -1031,12 +1026,15 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   input = NULL;
 
   CompactionStats stats;
+  stats.count = 1;
   stats.micros = env_->NowMicros() - start_micros - imm_micros;
   for (int which = 0; which < 2; which++) {
+    stats.files_deleted += compact->compaction->num_input_files(which);
     for (int i = 0; i < compact->compaction->num_input_files(which); i++) {
       stats.bytes_read += compact->compaction->input(which, i)->file_size;
     }
   }
+  stats.files_created += compact->outputs.size();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     stats.bytes_written += compact->outputs[i].file_size;
   }
@@ -1144,24 +1142,30 @@ Status DBImpl::Get(const ReadOptions& options,
     mutex_.Unlock();
     // First look in the memtable, then in the immutable memtable (if any).
     LookupKey lkey(key, snapshot);
+    bool found;
+#ifdef PERF_LOG
+    uint64_t start_micros = benchmark::NowMicros();
+    found = mem->Get(lkey, value, &s);
+    if (!found) found = imm != NULL && imm->Get(lkey, value, &s);
+    benchmark::LogMicros(benchmark::MEMTABLE, benchmark::NowMicros() - start_micros);
+    if (!found) {
+      start_micros = benchmark::NowMicros();
+      s = current->Get(options, lkey, value, &stats);
+      benchmark::LogMicros(benchmark::VERSION, benchmark::NowMicros() - start_micros);
+      have_stat_update = true;
+    }
+#else
     if (mem->Get(lkey, value, &s)) {
         // Done
     } else if (imm != NULL && imm->Get(lkey, value, &s)) {
         // Done
     } else {
-#ifdef PERF_LOG
-      uint64_t start_micros = NowMicros();
-#endif
       s = current->Get(options, lkey, value, &stats);
-#ifdef PERF_LOG
-      uint64_t micros = NowMicros() - start_micros;
-      logMicro(VERSION, micros);
-#endif
       have_stat_update = true;
     }
+#endif
     mutex_.Lock();
   }
-
   if (have_stat_update && current->UpdateStats(stats)) {
     MaybeScheduleCompaction();
   }
@@ -1424,23 +1428,54 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
              "                               Compactions\n"
              "Level  Files Size(MB) Time(sec) Read(MB) Write(MB)\n"
              "--------------------------------------------------\n"
-             );
+    );
     value->append(buf);
     for (int level = 0; level < config::kNumLevels; level++) {
       int files = versions_->NumLevelFiles(level);
       if (stats_[level].micros > 0 || files > 0) {
         snprintf(
-            buf, sizeof(buf),
-            "%3d %8d %8.0f %9.0f %8.0f %9.0f\n",
-            level,
-            files,
-            versions_->NumLevelBytes(level) / 1048576.0,
-            stats_[level].micros / 1e6,
-            stats_[level].bytes_read / 1048576.0,
-            stats_[level].bytes_written / 1048576.0);
+          buf, sizeof(buf),
+          "%3d %8d %8.0f %9.0f %8.0f %9.0f\n",
+          level,
+          files,
+          versions_->NumLevelBytes(level) / 1048576.0,
+          stats_[level].micros / 1e6,
+          stats_[level].bytes_read / 1048576.0,
+          stats_[level].bytes_written / 1048576.0);
         value->append(buf);
       }
     }
+    return true;
+  } else if (in == "csv") {
+    char buf[200];
+    snprintf(buf, sizeof(buf),
+             "Level, Files, Size(MB), C Time(sec), C Read(MB), C Write(MB), C File Deleted, C File Created, C Count,\n");
+    value->append(buf);
+    int sum[8] = {0};
+    for (int level = 0; level < config::kNumLevels; level++) {
+      snprintf(buf, sizeof(buf), "%d, %d, %f, %f, %f, %f, %li, %li, %li,\n",
+               level,
+               versions_->NumLevelFiles(level),
+               versions_->NumLevelBytes(level) / 1048576.0,
+               stats_[level].micros / 1e6,
+               stats_[level].bytes_read / 1048576.0,
+               stats_[level].bytes_written / 1048576.0,
+               stats_[level].files_deleted,
+               stats_[level].files_created,
+               stats_[level].count);
+      value->append(buf);
+      sum[0] += versions_->NumLevelFiles(level);
+      sum[1] += versions_->NumLevelBytes(level) / 1048576.0;
+      sum[2] += stats_[level].micros / 1e6;
+      sum[3] += stats_[level].bytes_read / 1048576.0;
+      sum[4] += stats_[level].bytes_written / 1048576.0;
+      sum[5] += stats_[level].files_deleted;
+      sum[6] += stats_[level].files_created;
+      sum[7] += stats_[level].count;
+    }
+    snprintf(buf, sizeof(buf), "Total, %d, %d, %d, %d, %d, %d, %d, %d,\n",
+             sum[0], sum[1], sum[2], sum[3], sum[4], sum[5], sum[6], sum[7]);
+    value->append(buf);
     return true;
   } else if (in == "sstables") {
     *value = versions_->current()->DebugString();

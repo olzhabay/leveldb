@@ -19,6 +19,8 @@ class Histogram {
   void Merge(const Histogram& other);
 
   std::string ToString() const;
+  std::string GetInfo() const;
+  std::string GetHistogram() const;
 
  private:
   double min_;
@@ -26,6 +28,7 @@ class Histogram {
   double num_;
   double sum_;
   double sum_squares_;
+  double b_count_;
 
   enum { kNumBuckets = 154 };
   static const double kBucketLimit[kNumBuckets];
