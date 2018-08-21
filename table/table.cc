@@ -241,7 +241,7 @@ Iterator* Table::BlockReader2(void* arg,
       } else {
         uint64_t start_micros = benchmark::NowMicros();
         s = ReadBlock(table->rep_->file, options, handle, &contents);
-        benchmark::LogMicros(benchmark::BLOCK, benchmark::NowMicros() - start_micros);
+        benchmark::LogMicros(benchmark::BLOCK_READ, benchmark::NowMicros() - start_micros);
         if (s.ok()) {
           block = new Block(contents);
           if (contents.cachable && options.fill_cache) {
@@ -253,7 +253,7 @@ Iterator* Table::BlockReader2(void* arg,
     } else {
       uint64_t start_micros = benchmark::NowMicros();
       s = ReadBlock(table->rep_->file, options, handle, &contents);
-      benchmark::LogMicros(benchmark::BLOCK, benchmark::NowMicros() - start_micros);
+      benchmark::LogMicros(benchmark::BLOCK_READ, benchmark::NowMicros() - start_micros);
       if (s.ok()) {
         block = new Block(contents);
       }
@@ -309,10 +309,39 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
                           void* arg,
                           void (*saver)(void*, const Slice&, const Slice&)) {
   Status s;
+#ifdef PERF_LOG
+  uint64_t start_micros = benchmark::NowMicros();
+  Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
+  benchmark::LogMicros(benchmark::INDEX_READ, benchmark::NowMicros() - start_micros);
+  start_micros = benchmark::NowMicros();
+  iiter->Seek(k);
+  benchmark::LogMicros(benchmark::QUERY_BLOCK, benchmark::NowMicros() - start_micros);
+#else
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
   iiter->Seek(k);
+#endif
   if (iiter->Valid()) {
     Slice handle_value = iiter->value();
+#ifdef PERF_LOG
+    start_micros = benchmark::NowMicros();
+    FilterBlockReader* filter = rep_->filter;
+    BlockHandle handle;
+    bool bloom = (filter != NULL &&
+        handle.DecodeFrom(&handle_value).ok() &&
+        !filter->KeyMayMatch(handle.offset(), k));
+    benchmark::LogMicros(benchmark::BLOOM_FILTER, benchmark::NowMicros() - start_micros);
+    if (!bloom){
+      Iterator* block_iter = BlockReader2(this, options, iiter->value());
+      start_micros = benchmark::NowMicros();
+      block_iter->Seek(k);
+      benchmark::LogMicros(benchmark::QUERY_VALUE, benchmark::NowMicros() - start_micros);
+      if (block_iter->Valid()) {
+        (*saver)(arg, block_iter->key(), block_iter->value());
+      }
+      s = block_iter->status();
+      delete block_iter;
+    }
+#else
     FilterBlockReader* filter = rep_->filter;
     BlockHandle handle;
     if (filter != NULL &&
@@ -328,6 +357,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
       s = block_iter->status();
       delete block_iter;
     }
+#endif
   }
   if (s.ok()) {
     s = iiter->status();

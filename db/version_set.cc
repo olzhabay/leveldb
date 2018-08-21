@@ -417,27 +417,27 @@ Status Version::Get(const ReadOptions& options,
                                    ikey, &saver, SaveValue);
       sum_micros += benchmark::NowMicros() - start_micros_;
       if (!s.ok()) {
-        benchmark::LogMicros(benchmark::QUERY, benchmark::NowMicros() - start_micros - sum_micros);
+        benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
         return s;
       }
       switch (saver.state) {
         case kNotFound:
           break;      // Keep searching in other files
         case kFound:
-          benchmark::LogMicros(benchmark::QUERY, benchmark::NowMicros() - start_micros - sum_micros);
+          benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
           return s;
         case kDeleted:
           s = Status::NotFound(Slice());  // Use empty error message for speed
-          benchmark::LogMicros(benchmark::QUERY, benchmark::NowMicros() - start_micros - sum_micros);
+          benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
           return s;
         case kCorrupt:
           s = Status::Corruption("corrupted key for ", user_key);
-          benchmark::LogMicros(benchmark::QUERY, benchmark::NowMicros() - start_micros - sum_micros);
+          benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
           return s;
       }
     }
   }
-  benchmark::LogMicros(benchmark::QUERY, benchmark::NowMicros() - start_micros - sum_micros);
+  benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
   return Status::NotFound(Slice());  // Use an empty error message for speed
 #else
   for (int level = 0; level < config::kNumLevels; level++) {

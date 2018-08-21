@@ -11,37 +11,56 @@ namespace leveldb {
 namespace  benchmark {
 
 enum Type {
-  QUERY = 0,
+  QUERY_FILE = 0,
   VERSION = 1,
-  BLOCK = 2,
+  BLOCK_READ = 2,
   MEMTABLE = 3,
+  INDEX_READ = 5,
+  QUERY_BLOCK = 6,
+  BLOOM_FILTER = 7,
+  QUERY_VALUE = 8,
 };
 
 class PerfLog {
 public:
   PerfLog() {
-    query_.Clear();
+    query_file_.Clear();
     version_.Clear();
     block_.Clear();
     memtable_.Clear();
+    index_read_.Clear();
+    query_block_.Clear();
+    bloom_filter_.Clear();
+    query_value_.Clear();
   }
 
   ~PerfLog() = default;
 
   void LogMicro(Type type, uint64_t micros) {
     switch (type) {
-      case QUERY:
-        query_.Add(micros);
+      case QUERY_FILE:
+        query_file_.Add(micros);
         break;
       case VERSION:
         version_.Add(micros);
         break;
-      case BLOCK:
+      case BLOCK_READ:
         block_.Add(micros);
         break;
       case MEMTABLE:
         memtable_.Add(micros);
         break;
+      case INDEX_READ:
+        index_read_.Add(micros);
+        break;
+      case QUERY_BLOCK:
+        query_block_.Add(micros);
+        break;
+      case BLOOM_FILTER:
+        bloom_filter_.Add(micros);
+        break;
+      case QUERY_VALUE:
+        query_value_.Add(micros);
     }
   }
 
@@ -51,10 +70,18 @@ public:
     r.append(memtable_.GetInfo());
     r.append("Version info,\n");
     r.append(version_.GetInfo());
-    r.append("Query info,\n");
-    r.append(query_.GetInfo());
-    r.append("Block info,\n");
+    r.append("Query File info,\n");
+    r.append(query_file_.GetInfo());
+    r.append("Index Block read info\n");
+    r.append(index_read_.GetInfo());
+    r.append("Query Block info\n");
+    r.append(query_block_.GetInfo());
+    r.append("Bloom Filter info\n");
+    r.append(bloom_filter_.GetInfo());
+    r.append("Block Read info,\n");
     r.append(block_.GetInfo());
+    r.append("Query Value info\n");
+    r.append(query_value_.GetInfo());
     return r;
   }
 
@@ -64,18 +91,30 @@ public:
     r.append(memtable_.GetHistogram());
     r.append("Version info,\n");
     r.append(version_.GetHistogram());
-    r.append("Query info,\n");
-    r.append(query_.GetHistogram());
-    r.append("Block info,\n");
+    r.append("Query File info,\n");
+    r.append(query_file_.GetHistogram());
+    r.append("Index Block read info\n");
+    r.append(index_read_.GetHistogram());
+    r.append("Query Block info\n");
+    r.append(query_block_.GetHistogram());
+    r.append("Bloom Filter info\n");
+    r.append(bloom_filter_.GetHistogram());
+    r.append("Block Read info,\n");
     r.append(block_.GetHistogram());
+    r.append("Query Value info\n");
+    r.append(query_value_.GetHistogram());
     return r;
   }
 
 private:
-  Histogram query_;
+  Histogram query_file_;
   Histogram version_;
   Histogram block_;
   Histogram memtable_;
+  Histogram index_read_;
+  Histogram query_block_;
+  Histogram bloom_filter_;
+  Histogram query_value_;
 };
 
 extern void CreatePerfLog();
