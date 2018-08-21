@@ -68,6 +68,11 @@ struct LEVELDB_EXPORT Options {
   // Default: NULL
   Logger* info_log;
 
+  // disable writing of recovery log during DB::Write() / Put() calls.
+  // This speeds performance but can lead to loss of tens of megabytes
+  // of data if system crashes.
+  bool disable_recovery_log;
+
   // -------------------
   // Parameters that affect performance
 

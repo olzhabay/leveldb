@@ -7,6 +7,8 @@ set(SNAPPY_LIBRARY "")
 
 string(REGEX MATCH "clang" CLANG ${CMAKE_CXX_COMPILER})
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
     find_library(Pthread_LIBRARY pthread)
     find_library(Realtime_LIBRARY rt)
@@ -62,6 +64,7 @@ set(LEVEL_DB_FILES
         include/leveldb/table.h
         include/leveldb/table_builder.h
         include/leveldb/write_batch.h
+        include/leveldb/persistant_pool.h
         db/c.cc
         db/builder.cc
         db/builder.h
@@ -133,8 +136,7 @@ set(LEVEL_DB_FILES
         util/testutil.h
         util/testutil.cc
         util/perf_log.h
-        util/perf_log.cc
-        )
+        util/perf_log.cc util/persist.h)
 
 if(WIN32)
     list(APPEND LEVEL_DB_FILES
@@ -162,9 +164,29 @@ target_link_libraries(leveldb
         PRIVATE
         ${Boost_LIBRARIES}
         ${Pthread_LIBRARY}
+        ${PMEM_LIBRARY}
+        ${PMEMCTO_LIBRARY}
+        ${PMEMOBJ_LIBRARY}
+        ${PMEMLOG_LIBRARY}
         )
 
-set_target_properties(leveldb PROPERTIES PUBLIC_HEADER "include/leveldb/c.h;include/leveldb/cache.h;include/leveldb/comparator.h;include/leveldb/db.h;include/leveldb/dumpfile.h;include/leveldb/env.h;include/leveldb/iterator.h;include/leveldb/filter_policy.h;include/leveldb/iterator.h;include/leveldb/options.h;include/leveldb/slice.h;include/leveldb/status.h;include/leveldb/table.h;include/leveldb/table_builder.h;include/leveldb/write_batch.h;")
+set_target_properties(leveldb PROPERTIES PUBLIC_HEADER
+        "include/leveldb/c.h;
+        include/leveldb/cache.h;
+        include/leveldb/comparator.h;
+        include/leveldb/db.h;
+        include/leveldb/dumpfile.h;
+        include/leveldb/env.h;
+        include/leveldb/iterator.h;
+        include/leveldb/filter_policy.h;
+        include/leveldb/iterator.h;
+        include/leveldb/options.h;
+        include/leveldb/slice.h;
+        include/leveldb/status.h;
+        include/leveldb/table.h;
+        include/leveldb/table_builder.h;
+        include/leveldb/write_batch.h;
+        include/leveldb/persistant_pool.h;")
 
 INSTALL(TARGETS leveldb ARCHIVE DESTINATION /usr/local/lib PUBLIC_HEADER DESTINATION /usr/local/include/leveldb)
 
