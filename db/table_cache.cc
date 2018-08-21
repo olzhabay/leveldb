@@ -111,15 +111,8 @@ Status TableCache::Get(const ReadOptions& options,
                        const Slice& k,
                        void* arg,
                        void (*saver)(void*, const Slice&, const Slice&)) {
-#ifdef PERF_LOG
-  uint64_t start_micro = benchmark::NowMicros();
   Cache::Handle* handle = NULL;
   Status s = FindTable(file_number, file_size, &handle);
-  benchmark::LogMicros(benchmark::TABLE_CACHE, benchmark::NowMicros() - start_micro);
-#else
-  Cache::Handle* handle = NULL;
-  Status s = FindTable(file_number, file_size, &handle);
-#endif
   if (s.ok()) {
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
     s = t->InternalGet(options, k, arg, saver);

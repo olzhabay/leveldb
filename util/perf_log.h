@@ -20,7 +20,7 @@ enum Type {
   BLOOM_FILTER = 7,
   QUERY_VALUE = 8,
   FILE_ACCESS = 9,
-  TABLE_CACHE = 10,
+  VALUE_COPY = 10,
 };
 
 class PerfLog {
@@ -35,7 +35,7 @@ public:
     bloom_filter_.Clear();
     query_value_.Clear();
     file_access_.Clear();
-    table_cache_.Clear();
+    value_copy_.Clear();
   }
 
   ~PerfLog() = default;
@@ -69,8 +69,8 @@ public:
       case FILE_ACCESS:
         file_access_.Add(micros);
         break;
-      case TABLE_CACHE:
-        table_cache_.Add(micros);
+      case VALUE_COPY:
+        value_copy_.Add(micros);
         break;
     }
   }
@@ -93,10 +93,10 @@ public:
     r.append(block_.GetInfo());
     r.append("Query Value info\n");
     r.append(query_value_.GetInfo());
+    r.append("Value Copy info\n");
+    r.append(value_copy_.GetInfo());
     r.append("File Access info\n");
     r.append(file_access_.GetInfo());
-    r.append("Table Cache info\n");
-    r.append(table_cache_.GetInfo());
     return r;
   }
 
@@ -118,10 +118,10 @@ public:
     r.append(block_.GetHistogram());
     r.append("Query Value info\n");
     r.append(query_value_.GetHistogram());
+    r.append("Value Copy info\n");
+    r.append(value_copy_.GetHistogram());
     r.append("File Access info\n");
     r.append(file_access_.GetHistogram());
-    r.append("Table Cache info\n");
-    r.append(table_cache_.GetHistogram());
     return r;
   }
 
@@ -135,7 +135,7 @@ private:
   Histogram bloom_filter_;
   Histogram query_value_;
   Histogram file_access_;
-  Histogram table_cache_;
+  Histogram value_copy_;
 };
 
 extern void CreatePerfLog();

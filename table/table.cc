@@ -335,9 +335,11 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
       start_micros = benchmark::NowMicros();
       block_iter->Seek(k);
       benchmark::LogMicros(benchmark::QUERY_VALUE, benchmark::NowMicros() - start_micros);
+      start_micros = benchmark::NowMicros();
       if (block_iter->Valid()) {
         (*saver)(arg, block_iter->key(), block_iter->value());
       }
+      benchmark::LogMicros(benchmark::VALUE_COPY, benchmark::NowMicros() - start_micros);
       s = block_iter->status();
       delete block_iter;
     }
