@@ -355,6 +355,7 @@ Status Version::Get(const ReadOptions& options,
 #ifdef PERF_LOG
   uint64_t start_micros = benchmark::NowMicros();
   uint64_t sum_micros = 0;
+  int file_accesses = 0;
   for (int level = 0; level < config::kNumLevels; level++) {
     size_t num_files = files_[level].size();
     if (num_files == 0) continue;
@@ -413,10 +414,12 @@ Status Version::Get(const ReadOptions& options,
       saver.user_key = user_key;
       saver.value = value;
       uint64_t start_micros_ = benchmark::NowMicros();
+      file_accesses++;
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
                                    ikey, &saver, SaveValue);
       sum_micros += benchmark::NowMicros() - start_micros_;
       if (!s.ok()) {
+        benchmark::LogMicros(benchmark::FILE_ACCESS, file_accesses);
         benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
         return s;
       }
@@ -424,19 +427,23 @@ Status Version::Get(const ReadOptions& options,
         case kNotFound:
           break;      // Keep searching in other files
         case kFound:
+          benchmark::LogMicros(benchmark::FILE_ACCESS, file_accesses);
           benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
           return s;
         case kDeleted:
           s = Status::NotFound(Slice());  // Use empty error message for speed
+          benchmark::LogMicros(benchmark::FILE_ACCESS, file_accesses);
           benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
           return s;
         case kCorrupt:
           s = Status::Corruption("corrupted key for ", user_key);
+          benchmark::LogMicros(benchmark::FILE_ACCESS, file_accesses);
           benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
           return s;
       }
     }
   }
+  benchmark::LogMicros(benchmark::FILE_ACCESS, file_accesses);
   benchmark::LogMicros(benchmark::QUERY_FILE, benchmark::NowMicros() - start_micros - sum_micros);
   return Status::NotFound(Slice());  // Use an empty error message for speed
 #else

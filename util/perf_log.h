@@ -19,6 +19,7 @@ enum Type {
   QUERY_BLOCK = 6,
   BLOOM_FILTER = 7,
   QUERY_VALUE = 8,
+  FILE_ACCESS = 9,
 };
 
 class PerfLog {
@@ -32,6 +33,7 @@ public:
     query_block_.Clear();
     bloom_filter_.Clear();
     query_value_.Clear();
+    file_access_.Clear();
   }
 
   ~PerfLog() = default;
@@ -61,6 +63,10 @@ public:
         break;
       case QUERY_VALUE:
         query_value_.Add(micros);
+        break;
+      case FILE_ACCESS:
+        file_access_.Add(micros);
+        break;
     }
   }
 
@@ -82,6 +88,8 @@ public:
     r.append(block_.GetInfo());
     r.append("Query Value info\n");
     r.append(query_value_.GetInfo());
+    r.append("File Access info\n");
+    r.append(file_access_.GetInfo());
     return r;
   }
 
@@ -103,6 +111,8 @@ public:
     r.append(block_.GetHistogram());
     r.append("Query Value info\n");
     r.append(query_value_.GetHistogram());
+    r.append("File Access info\n");
+    r.append(file_access_.GetHistogram());
     return r;
   }
 
@@ -115,6 +125,7 @@ private:
   Histogram query_block_;
   Histogram bloom_filter_;
   Histogram query_value_;
+  Histogram file_access_;
 };
 
 extern void CreatePerfLog();
