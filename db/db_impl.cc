@@ -1447,7 +1447,6 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     }
     return true;
   } else if (in == "csv") {
-    value->append("Compaction info,\n");
     char buf[200];
     snprintf(buf, sizeof(buf),
              "Level, Files, Size(MB), C Time(sec), C Read(MB), C Write(MB), C File Deleted, C File Created, C Count,\n");
