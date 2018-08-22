@@ -1447,23 +1447,13 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     }
     return true;
   } else if (in == "csv") {
+    value->append("Compaction info,\n");
     char buf[200];
     snprintf(buf, sizeof(buf),
              "Level, Files, Size(MB), C Time(sec), C Read(MB), C Write(MB), C File Deleted, C File Created, C Count,\n");
     value->append(buf);
     int sum[8] = {0};
     for (int level = 0; level < config::kNumLevels; level++) {
-      snprintf(buf, sizeof(buf), "%d, %d, %f, %f, %f, %f, %li, %li, %li,\n",
-               level,
-               versions_->NumLevelFiles(level),
-               versions_->NumLevelBytes(level) / 1048576.0,
-               stats_[level].micros / 1e6,
-               stats_[level].bytes_read / 1048576.0,
-               stats_[level].bytes_written / 1048576.0,
-               stats_[level].files_deleted,
-               stats_[level].files_created,
-               stats_[level].count);
-      value->append(buf);
       sum[0] += versions_->NumLevelFiles(level);
       sum[1] += versions_->NumLevelBytes(level) / 1048576.0;
       sum[2] += stats_[level].micros / 1e6;
