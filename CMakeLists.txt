@@ -132,6 +132,8 @@ set(LEVEL_DB_FILES
         port/atomic_pointer.h
         util/testutil.h
         util/testutil.cc
+        util/testharness.h
+        util/testharness.cc
         util/perf_log.h
         util/perf_log.cc
         )
