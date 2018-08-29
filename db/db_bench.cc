@@ -786,6 +786,9 @@ class Benchmark {
       }
     }
     thread->stats.AddBytes(bytes);
+#ifdef PERF_LOG
+    benchmark::ClearPerfLog();
+#endif
   }
 
   void ReadSequential(ThreadState* thread) {
@@ -965,6 +968,9 @@ class Benchmark {
 
   void WaitCompaction(ThreadState* thread) {
     db_->WaitComp();
+#ifdef PERF_LOG
+    benchmark::ClearPerfLog();
+#endif
   }
 
   void Compact(ThreadState* thread) {

@@ -353,6 +353,7 @@ Status Version::Get(const ReadOptions& options,
   std::vector<FileMetaData*> tmp;
   FileMetaData* tmp2;
 #ifdef PERF_LOG
+  benchmark::LogMicros(benchmark::LEVEL0_FILES, files_[0].size());
   uint64_t start_micros = benchmark::NowMicros();
   uint64_t sum_micros = 0;
   int file_accesses = 0;
