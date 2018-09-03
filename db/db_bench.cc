@@ -1096,6 +1096,7 @@ class Benchmark {
   void RunTrace(ThreadState* thread) {
     RandomGenerator gen;
     ReadOptions read_operations;
+    Iterator* it = nullptr;
     for (const auto& operation : ycsb_trace) {
       Status s;
       if (operation.operation_type == 'i') {
@@ -1125,7 +1126,9 @@ class Benchmark {
       } else if (operation.operation_type == 's') {
         char key[100];
         snprintf(key, sizeof(key), "%020lu", operation.key);
-        Iterator* it = db_->NewIterator(read_operations);
+        if (it == nullptr) {
+          it = db_->NewIterator(read_operations);
+        }
         int i = 0;
         for (it->Seek(key); it->Valid() && i < operation.length; it->Next()) {
           uint64_t size = it->key().ToString().size() + it->value().ToString().size();
@@ -1133,15 +1136,14 @@ class Benchmark {
           thread->stats.FinishedSingleOp();
           ycsb_histogram_.at("scan").Add(thread->stats.LastOperationMicros());
         }
-        delete it;
       }
-
       if (!s.ok()) {
-        fprintf(stderr, "put error: %s\n", s.ToString().c_str());
+        fprintf(stderr, "Error: %s\n", s.ToString().c_str());
         exit(1);
       }
-
     }
+    delete it;
+    it = nullptr;
   }
 
   void WaitCompaction(ThreadState* thread) {
