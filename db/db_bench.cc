@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unordered_map>
 #include "db/db_impl.h"
 #include "db/version_set.h"
 #include "leveldb/cache.h"
@@ -111,6 +112,20 @@ static int FLAGS_range_size = 1000;
 // Use the db with the following name.
 static const char* FLAGS_db = NULL;
 
+// trace dir
+static std::string FLAGS_trace;
+
+// Trace operation for YCSB
+struct Operation {
+  char operation_type;
+  uint64_t key;
+  uint64_t length;
+};
+
+std::vector<Operation> ycsb_trace;
+
+static std::unordered_map<std::string, leveldb::Histogram> ycsb_histogram_;
+
 namespace leveldb {
 
 namespace {
@@ -179,6 +194,7 @@ class Stats {
   int next_report_;
   int64_t bytes_;
   double last_op_finish_;
+  double last_op_micros_;
   Histogram hist_;
   std::string message_;
 
@@ -218,17 +234,22 @@ class Stats {
     AppendWithSpace(&message_, msg);
   }
 
+  const double LastOperationMicros() {
+    return last_op_micros_;
+  }
+
   void FinishedSingleOp() {
+    double now = g_env->NowMicros();
+    double micros = now - last_op_finish_;
     if (FLAGS_histogram) {
-      double now = g_env->NowMicros();
-      double micros = now - last_op_finish_;
       hist_.Add(micros);
       if (micros > 20000) {
         fprintf(stderr, "long op: %.1f micros%30s\r", micros, "");
         fflush(stderr);
       }
-      last_op_finish_ = now;
     }
+    last_op_finish_ = now;
+    last_op_micros_ = micros;
 
     done_++;
     if (done_ >= next_report_) {
@@ -448,6 +469,7 @@ class Benchmark {
     }
     PrintHeader();
     Open();
+    bool YCSB = false;
 
     const char* benchmarks = FLAGS_benchmarks;
     while (benchmarks != NULL) {
@@ -539,6 +561,9 @@ class Benchmark {
         HeapProfile();
       } else if (name == Slice("waitcompaction")) {
         method = &Benchmark::WaitCompaction;
+      } else if (name == Slice("YCSB")) {
+        YCSB = true;
+        method = &Benchmark::RunTrace;
       } else if (name == Slice("stats")) {
         if (FLAGS_csv) {
           PrintStats("leveldb.csv");
@@ -552,7 +577,10 @@ class Benchmark {
           fprintf(stderr, "unknown benchmark '%s'\n", name.ToString().c_str());
         }
       }
-      if (method != NULL) {
+
+      if (YCSB) {
+        RunYCSB(num_threads, method);
+      } else if (method != NULL) {
         RunBenchmark(num_threads, name, method);
       }
     }
@@ -639,6 +667,104 @@ class Benchmark {
       delete arg[i].thread;
     }
     delete[] arg;
+  }
+
+
+  void RunYCSB(int n, void (Benchmark::*method)(ThreadState*)) {
+    // init workload names
+    std::vector<std::pair<std::string, std::string>> workloads; // {workload name, trace file name}
+    workloads.emplace_back("LoadWorkload", "trace_load.csv");
+    workloads.emplace_back("WorkloadA", "trace_runa.csv");
+    workloads.emplace_back("WorkloadB", "trace_runb.csv");
+    workloads.emplace_back("WorkloadC", "trace_runc.csv");
+    workloads.emplace_back("WorkloadD", "trace_rund.csv");
+    workloads.emplace_back("WorkloadE", "trace_rune.csv");
+    workloads.emplace_back("WorkloadF", "trace_runf.csv");
+    // init performance counter for operations
+    ycsb_histogram_.insert({"insert", Histogram()});
+    ycsb_histogram_.insert({"read", Histogram()});
+    ycsb_histogram_.insert({"update", Histogram()});
+    ycsb_histogram_.insert({"scan", Histogram()});
+
+    for (const auto& workload : workloads) {
+      // init
+      Slice name = workload.first;
+      std::string trace_name = FLAGS_trace + "/" + workload.second;
+      FILE* trace_file = fopen(trace_name.c_str(), "r");
+      if (trace_file == NULL) {
+        fprintf(stderr, "Error while opening trace file %s\n", trace_name.c_str());
+        exit(1);
+      }
+      // preparing trace
+      fprintf(stdout, "Reading trace\n");
+      size_t bufsize = 100;
+      char* buf = new char[100];
+      int status = getline(&buf, &bufsize, trace_file);
+      assert(status > 1);
+      uint64_t count;
+      sscanf(buf, "%lu\n", &count);
+      ycsb_trace.clear();
+      ycsb_trace.reserve(count);
+      for (uint64_t i = 0; i < count; i++) {
+        status = getline(&buf, &bufsize, trace_file);
+        assert(status > 1);
+        Operation operation;
+        sscanf(buf, "%c %lu %lu\n", &operation.operation_type, &operation.key, &operation.length);
+        ycsb_trace.emplace_back(operation);
+      }
+      fprintf(stdout, "Finished reading trace\n");
+
+      // clearing performance counters
+      for (auto& operations : ycsb_histogram_) {
+        operations.second.Clear();
+      }
+
+      SharedState shared;
+      shared.total = n;
+      shared.num_initialized = 0;
+      shared.num_done = 0;
+      shared.start = false;
+
+      ThreadArg* arg = new ThreadArg[n];
+      for (int i = 0; i < n; i++) {
+        arg[i].bm = this;
+        arg[i].method = method;
+        arg[i].shared = &shared;
+        arg[i].thread = new ThreadState(i);
+        arg[i].thread->shared = &shared;
+        g_env->StartThread(ThreadBody, &arg[i]);
+      }
+
+      shared.mu.Lock();
+      while (shared.num_initialized < n) {
+        shared.cv.Wait();
+      }
+
+      shared.start = true;
+      shared.cv.SignalAll();
+      while (shared.num_done < n) {
+        shared.cv.Wait();
+      }
+      shared.mu.Unlock();
+
+      for (int i = 1; i < n; i++) {
+        arg[0].thread->stats.Merge(arg[i].thread->stats);
+      }
+      arg[0].thread->stats.Report(name);
+      for (const auto& histogram : ycsb_histogram_) {
+        fprintf(stdout, "%s\n", histogram.first.c_str());
+        fprintf(stdout, "%s\n", histogram.second.GetInfo().c_str());
+      }
+      std::string stats;
+      db_->GetProperty("leveldb.csv", &stats);
+      fprintf(stdout, "%s\n", stats.c_str());
+
+      for (int i = 0; i < n; i++) {
+        delete arg[i].thread;
+      }
+      delete[] arg;
+      fclose(trace_file);
+    }
   }
 
   void Crc32c(ThreadState* thread) {
@@ -963,6 +1089,58 @@ class Benchmark {
 
       // Do not count any of the preceding work/delay in stats.
       thread->stats.Start();
+    }
+  }
+
+
+  void RunTrace(ThreadState* thread) {
+    RandomGenerator gen;
+    ReadOptions read_operations;
+    for (const auto& operation : ycsb_trace) {
+      Status s;
+      if (operation.operation_type == 'i') {
+        char key[100];
+        snprintf(key, sizeof(key), "%020lu", operation.key);
+        s = db_->Put(write_options_, key, gen.Generate(value_size_));
+        thread->stats.FinishedSingleOp();
+        ycsb_histogram_.at("insert").Add(thread->stats.LastOperationMicros());
+      } else if (operation.operation_type == 'r') {
+        char key[100];
+        snprintf(key, sizeof(key), "%020lu", operation.key);
+        std::string value;
+        s = db_->Get(read_operations, key, &value);
+        thread->stats.FinishedSingleOp();
+        ycsb_histogram_.at("read").Add(thread->stats.LastOperationMicros());
+      } else if (operation.operation_type == 'u') {
+        char key[100];
+        snprintf(key, sizeof(key), "%020lu", operation.key);
+        std::string value;
+        s = db_->Get(read_operations, key, &value);
+        if (!value.empty()) {
+          // Update only if key exists in DB
+          s = db_->Put(write_options_, key, gen.Generate(value_size_));
+        }
+        thread->stats.FinishedSingleOp();
+        ycsb_histogram_.at("update").Add(thread->stats.LastOperationMicros());
+      } else if (operation.operation_type == 's') {
+        char key[100];
+        snprintf(key, sizeof(key), "%020lu", operation.key);
+        Iterator* it = db_->NewIterator(read_operations);
+        int i = 0;
+        for (it->Seek(key); it->Valid() && i < operation.length; it->Next()) {
+          uint64_t size = it->key().ToString().size() + it->value().ToString().size();
+          i++;
+          thread->stats.FinishedSingleOp();
+          ycsb_histogram_.at("scan").Add(thread->stats.LastOperationMicros());
+        }
+        delete it;
+      }
+
+      if (!s.ok()) {
+        fprintf(stderr, "put error: %s\n", s.ToString().c_str());
+        exit(1);
+      }
+
     }
   }
 
