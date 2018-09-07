@@ -660,12 +660,14 @@ class Benchmark {
         }
       }
     }
+#ifdef PERF_LOG
     if (FLAGS_csv) {
       fprintf(csv_file, "%s", leveldb::benchmark::GetInfo().c_str());
       if (FLAGS_histogram) {
         fprintf(csv_file, "%s", leveldb::benchmark::GetHistogram().c_str());
       }
     }
+#endif
   }
 
  private:
@@ -1091,9 +1093,9 @@ class Benchmark {
         char key[100];
         snprintf(key, sizeof(key), "%020lu", operation.key);
         std::string value;
-        uint64_t micros = benchmark::NowMicros();
+        uint64_t micros = g_env->NowMicros();
         s = db_->Get(read_operations, key, &value);
-        ycsb_histogram_.at("query").Add(benchmark::NowMicros() - micros);
+        ycsb_histogram_.at("query").Add(g_env->NowMicros() - micros);
         if (!value.empty()) {
           // Update only if key exists in DB
           s = db_->Put(write_options_, key, gen.Generate(value_size_));
