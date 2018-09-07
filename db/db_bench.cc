@@ -12,6 +12,7 @@
 #include "leveldb/db.h"
 #include "leveldb/env.h"
 #include "leveldb/write_batch.h"
+#include "leveldb/persistant_pool.h"
 #include "port/port.h"
 #include "util/crc32c.h"
 #include "util/histogram.h"
@@ -1173,6 +1174,8 @@ int main(int argc, char** argv) {
   FLAGS_block_size = leveldb::Options().block_size;
   FLAGS_open_files = leveldb::Options().max_open_files;
   std::string default_db_path;
+  std::string nvm_dir;
+  size_t nvm_size = 0;
 
   for (int i = 1; i < argc; i++) {
     double d;
@@ -1216,8 +1219,13 @@ int main(int argc, char** argv) {
       FLAGS_open_files = n;
     } else if (sscanf(argv[i], "--range_size=%d%c", &n, &junk) == 1) {
       FLAGS_range_size = n;
+    } else if (sscanf(argv[i], "--nvm_size=%d%c", &n, &junk) == 1) {
+      nvm_size = n;
+      nvm_size = nvm_size * 1024 * 1024;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
+    } else if (strncmp(argv[i], "--nvm_dir=", 10) == 0) {
+      nvm_dir = argv[i] + 10;
     } else if (strncmp(argv[i], "--trace_dir=", 12) == 0) {
       FLAGS_trace = argv[i] + 12;
       FLAGS_ycsb = true;
@@ -1236,11 +1244,20 @@ int main(int argc, char** argv) {
       FLAGS_db = default_db_path.c_str();
   }
 
+  if (!nvm_dir.empty()) {
+    fprintf(stdout, "NVRAM pool: dir %s, size %lu\n", nvm_dir.data(), nvm_size);
+    leveldb::nvram::create_pool(nvm_dir, nvm_size);
+  } else {
+    fprintf(stdout, "NVRAM pool is not allocated\n");
+    fflush(stdout);
+  }
+
   leveldb::Benchmark benchmark;
   benchmark.Run();
 #ifdef PERF_LOG
   leveldb::benchmark::ClosePerfLog();
 #endif
+  leveldb::nvram::close_pool();
   return 0;
 }
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(leveldb CXX)
+project(PMDB C CXX)
 set(CMAKE_DEBUG_POSTFIX "d")
 
 set(SNAPPY_LIBRARY "")
@@ -9,37 +9,22 @@ string(REGEX MATCH "clang" CLANG ${CMAKE_CXX_COMPILER})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
-    find_library(Pthread_LIBRARY pthread)
-    find_library(Realtime_LIBRARY rt)
-    # find library can be problematic with stdc++ which is why we hardwire the link
-    set(Stdcpp_LIBRARY stdc++)
-else(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
-    set(Pthread_LIBRARY "")
-    set(Realtime_LIBRARY "")
-    set(Stdcpp_LIBRARY "")
-endif(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
+find_library(Pthread_LIBRARY pthread)
+find_library(Realtime_LIBRARY rt)
+find_package(PMDK REQUIRED)
+set(Stdcpp_LIBRARY stdc++)
 
-include_directories(${Boost_INCLUDE_DIRS}
+include_directories(
+        ${VMEM_INCLUDE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}
-        include)
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-if(MSVC)
-    add_compile_options(
-            /D_CRT_SECURE_NO_WARNINGS
-            /wd4389 # signed/unsigned mismatch
-            /wd4800 # constructor never returns, potential memory leak because of a singleton pattern
-            /wd4722 # unreachable code because of singleton pattern
-            /wd4702 # bool cast performance warning
-    )
-else()
-    add_compile_options(
-            -Wno-sign-compare
-            -std=c++17
-            -O2
-            -DNDEBUG
-    )
-endif()
+add_compile_options(
+        -Wno-sign-compare
+        -std=c++17
+        -O2
+        -DNDEBUG
+)
 
 add_definitions(-DLEVELDB_ATOMIC_PRESENT)
 add_definitions(-DOS_LINUX)
@@ -164,7 +149,6 @@ target_include_directories(leveldb
 
 target_link_libraries(leveldb
         PRIVATE
-        ${Boost_LIBRARIES}
         ${Pthread_LIBRARY}
         ${PMEM_LIBRARY}
         ${PMEMCTO_LIBRARY}
