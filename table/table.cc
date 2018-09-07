@@ -172,8 +172,39 @@ Iterator* Table::BlockReader(void* arg,
   Status s = handle.DecodeFrom(&input);
   // We intentionally allow extra stuff in index_value so that we
   // can add more features in the future.
+
   if (s.ok()) {
     BlockContents contents;
+#ifdef PERF_LOG
+    if (block_cache != NULL) {
+      char cache_key_buffer[16];
+      EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
+      EncodeFixed64(cache_key_buffer+8, handle.offset());
+      Slice key(cache_key_buffer, sizeof(cache_key_buffer));
+      cache_handle = block_cache->Lookup(key);
+      if (cache_handle != NULL) {
+        block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
+      } else {
+        uint64_t start_micros = benchmark::NowMicros();
+        s = ReadBlock(table->rep_->file, options, handle, &contents);
+        benchmark::LogMicros(benchmark::BLOCK_READ_ITER, benchmark::NowMicros() - start_micros);
+        if (s.ok()) {
+          block = new Block(contents);
+          if (contents.cachable && options.fill_cache) {
+            cache_handle = block_cache->Insert(
+              key, block, block->size(), &DeleteCachedBlock);
+          }
+        }
+      }
+    } else {
+      uint64_t start_micros = benchmark::NowMicros();
+      s = ReadBlock(table->rep_->file, options, handle, &contents);
+      benchmark::LogMicros(benchmark::BLOCK_READ_ITER, benchmark::NowMicros() - start_micros);
+      if (s.ok()) {
+        block = new Block(contents);
+      }
+    }
+#else
     if (block_cache != NULL) {
       char cache_key_buffer[16];
       EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
@@ -198,6 +229,7 @@ Iterator* Table::BlockReader(void* arg,
         block = new Block(contents);
       }
     }
+#endif
   }
   Iterator* iter;
   if (block != NULL) {
@@ -335,9 +367,11 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
       start_micros = benchmark::NowMicros();
       block_iter->Seek(k);
       benchmark::LogMicros(benchmark::QUERY_VALUE, benchmark::NowMicros() - start_micros);
+      start_micros = benchmark::NowMicros();
       if (block_iter->Valid()) {
         (*saver)(arg, block_iter->key(), block_iter->value());
       }
+      benchmark::LogMicros(benchmark::VALUE_COPY, benchmark::NowMicros() - start_micros);
       s = block_iter->status();
       delete block_iter;
     }
