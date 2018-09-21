@@ -569,7 +569,7 @@ class Benchmark {
       } else if (name == Slice("readrandom")) {
         method = &Benchmark::ReadRandom;
       } else if (name == Slice("rangequery")) {
-        ranges_ = 10;
+        ranges_ = FLAGS_num / FLAGS_range_size;
         range_size_ = FLAGS_range_size;
         method = &Benchmark::RangeQuery;
       } else if (name == Slice("readmissing")) {
@@ -658,6 +658,9 @@ class Benchmark {
             fprintf(file, "%s", histogram.first.c_str());
             fprintf(file, "%s", histogram.second.GetInfo().c_str());
           }
+#ifdef PERF_LOG
+          fprintf(file, "%s\n", leveldb::benchmark::GetInfo().c_str());
+#endif
         }
       }
     }
@@ -882,7 +885,7 @@ class Benchmark {
       for (int j = 0; j < entries_per_batch_; j++) {
         const int k = seq ? i+j : (thread->rand.Next() % FLAGS_num);
         char key[100];
-        snprintf(key, sizeof(key), "%016d", k);
+        snprintf(key, sizeof(key), config::key_format, k);
         batch.Put(key, gen.Generate(value_size_));
         bytes += value_size_ + strlen(key);
         thread->stats.FinishedSingleOp();
@@ -934,7 +937,7 @@ class Benchmark {
     for (int i = 0; i < reads_; i++) {
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
-      snprintf(key, sizeof(key), "%016d", k);
+      snprintf(key, sizeof(key), config::key_format, k);
       if (db_->Get(options, key, &value).ok()) {
         found++;
       }
@@ -953,9 +956,9 @@ class Benchmark {
       const int k = abs((int)(thread->rand.Next() % FLAGS_num) - range_size_);
       const int l = k + range_size_;
       char begin[100];
-      snprintf(begin, sizeof(begin), "%016d", k);
+      snprintf(begin, sizeof(begin), config::key_format, k);
       char end[100];
-      snprintf(end, sizeof(end), "%016d", l);
+      snprintf(end, sizeof(end), config::key_format, l);
       Iterator* iter = db_->NewIterator(options);
       int r = 0;
       for (iter->Seek(begin); r < range_size_ && iter->Valid(); iter->Next()) {
@@ -988,7 +991,7 @@ class Benchmark {
     for (int i = 0; i < reads_; i++) {
       char key[100];
       const int k = thread->rand.Next() % range;
-      snprintf(key, sizeof(key), "%016d", k);
+      snprintf(key, sizeof(key), config::key_format, k);
       db_->Get(options, key, &value);
       thread->stats.FinishedSingleOp();
     }
@@ -1001,7 +1004,7 @@ class Benchmark {
       Iterator* iter = db_->NewIterator(options);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
-      snprintf(key, sizeof(key), "%016d", k);
+      snprintf(key, sizeof(key), config::key_format, k);
       iter->Seek(key);
       if (iter->Valid() && iter->key() == key) found++;
       delete iter;
@@ -1021,7 +1024,7 @@ class Benchmark {
       for (int j = 0; j < entries_per_batch_; j++) {
         const int k = seq ? i+j : (thread->rand.Next() % FLAGS_num);
         char key[100];
-        snprintf(key, sizeof(key), "%016d", k);
+        snprintf(key, sizeof(key), config::key_format, k);
         batch.Delete(key);
         thread->stats.FinishedSingleOp();
       }
@@ -1058,7 +1061,7 @@ class Benchmark {
 
         const int k = thread->rand.Next() % FLAGS_num;
         char key[100];
-        snprintf(key, sizeof(key), "%016d", k);
+        snprintf(key, sizeof(key), config::key_format, k);
         Status s = db_->Put(write_options_, key, gen.Generate(value_size_));
         if (!s.ok()) {
           fprintf(stderr, "put error: %s\n", s.ToString().c_str());
