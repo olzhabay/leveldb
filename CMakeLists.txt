@@ -123,7 +123,9 @@ set(LEVEL_DB_FILES
         util/testharness.h
         util/testharness.cc
         util/perf_log.h
-        util/perf_log.cc util/persist.h)
+        util/perf_log.cc
+        util/persist.h
+        util/persistant_pool.cc)
 
 if(WIN32)
     list(APPEND LEVEL_DB_FILES
